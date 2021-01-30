@@ -24,7 +24,7 @@ func init() {
 	flag.StringVar(&confPath, "c", "./consumer.yml", "path to config in yml format")
 }
 
-type workersStruct map[int]chan bool
+type workersStruct map[int]chan struct{}
 
 func main() {
 	logs, err := goLogz.Init([]goLogz.ParameterItem{
@@ -71,7 +71,7 @@ func main() {
 	workersM := make(workersStruct)
 	workersP := make(workersStruct)
 
-	var stopCh chan bool
+	stopCh := make(chan struct{})
 	ctx.Logger.Info("Starting consumer")
 	go consume(ctx)
 	ctx.Logger.Info("Starting mutator 1")
@@ -97,49 +97,54 @@ func main() {
 			ctx.Logger.Warning(fmt.Sprintf("Stack contains more than %d elements, starting new mutate worker", spawnEdgeM))
 			workersIdM++
 			spawnEdgeM = spawnEdgeM * 2
-			var stopCh chan bool
+			stopCh := make(chan struct{})
 			workersM[workersIdM] = stopCh
 			go mutate(ctx, workersIdM, workersM[workersIdM])
 			// prometheus `MutatorsCount`
 			MutatorsCount.Inc()
 			ctx.Logger.Warning(fmt.Sprint("Num of mutate workers: ", workersIdM))
-		}
-		if ctx.StackIn.Len() < spawnEdgeM {
+		} else if ctx.StackIn.Len() < spawnEdgeM {
 			if workersIdM != 1 {
-				ctx.Logger.Warning(fmt.Sprintf("Stack contains less than %d elements, stopping mutate worker", spawnEdgeM))
-				workersM[workersIdM] <- true
-				workersIdM--
-				spawnEdgeM = spawnEdgeM / 2
+				ctx.Logger.Warning(fmt.Sprintf("Stack contains less than %d elements, stopping mutate worker with ID %d", spawnEdgeM, workersIdM))
+
+				close(workersM[workersIdM])
 				delete(workersM, workersIdM)
 				// prometheus `MutatorsCount`
 				MutatorsCount.Dec()
-				ctx.Logger.Warning(fmt.Sprint("Num of mutate workers: ", workersIdM))
+				workersIdM--
+				spawnEdgeM = spawnEdgeM / 2
+
+				ctx.Logger.Warning(fmt.Sprintf("Num of mutate workers: %d, new spawnEdgeM: %d", workersIdM, spawnEdgeM))
 			}
 		}
 
 		if ctx.StackOut.Len() > spawnEdgeP {
 			ctx.Logger.Warning(fmt.Sprintf("Stack contains more than %d elements, starting new producer worker", spawnEdgeP))
+
 			workersIdP++
 			spawnEdgeP = spawnEdgeP * 2
-			var stopCh chan bool
+			stopCh := make(chan struct{})
 			workersP[workersIdP] = stopCh
 			go produce(ctx, workersIdP, workersP[workersIdP])
 			// prometheus `ProducersCount`
 			ProducersCount.Inc()
+
 			ctx.Logger.Warning(fmt.Sprint("Num of producer workers: ", workersIdP))
-		}
-		if ctx.StackOut.Len() < spawnEdgeP {
+		} else if ctx.StackOut.Len() < spawnEdgeP {
 			if workersIdP != 1 {
-				ctx.Logger.Warning(fmt.Sprintf("Stack contains less than %d elements, sopping producer worker", spawnEdgeM))
-				workersP[workersIdP] <- true
-				workersIdP--
-				spawnEdgeP = spawnEdgeP / 2
+				ctx.Logger.Warning(fmt.Sprintf("Stack contains less than %d elements, sopping producer worker with ID %d", spawnEdgeP, workersIdP))
+
+				close(workersP[workersIdP])
 				delete(workersP, workersIdP)
 				// prometheus `ProducersCount`
 				ProducersCount.Dec()
-				ctx.Logger.Warning(fmt.Sprint("Num of producer workers: ", workersIdP))
+				workersIdP--
+				spawnEdgeP = spawnEdgeP / 2
+
+				ctx.Logger.Warning(fmt.Sprintf("Num of producer workers: %d, new spawnEdgeM: %d", workersIdP, spawnEdgeP))
 			}
 		}
+		time.Sleep(10 * time.Second)
 	}
 
 }
@@ -184,11 +189,12 @@ func consume(ctx common.CustomContext) {
 	wg.Wait()
 }
 
-func mutate(ctx common.CustomContext, ID int, stopCh chan bool) {
+func mutate(ctx common.CustomContext, ID int, stopCh chan struct{}) {
 	for {
 		select {
-		case _ = <-stopCh:
+		case <-stopCh:
 			ctx.Logger.Info(fmt.Sprintf("[!] mutator %d stopped", ID))
+			return
 		default:
 			msg := ctx.StackIn.Get()
 			if msg != nil {
@@ -215,7 +221,7 @@ func mutate(ctx common.CustomContext, ID int, stopCh chan bool) {
 	}
 }
 
-func produce(ctx common.CustomContext, ID int, stopCh chan bool) {
+func produce(ctx common.CustomContext, ID int, stopCh chan struct{}) {
 
 	w := kafka.NewWriter(kafka.WriterConfig{
 		Brokers: ctx.Config.Brokers,
@@ -226,8 +232,9 @@ func produce(ctx common.CustomContext, ID int, stopCh chan bool) {
 
 	for {
 		select {
-		case _ = <-stopCh:
+		case <-stopCh:
 			ctx.Logger.Info(fmt.Sprintf("[!] producer %d stopped", ID))
+			return
 		default:
 			msg := ctx.StackOut.Get()
 			if msg != nil {
