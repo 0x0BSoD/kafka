@@ -1,0 +1,8 @@
+---
+prometheusPort: 2112
+topicI: "input"
+topicO: "output"
+brokers:
+  - 10.1.2.14:9092
+  - 10.1.2.29:9092
+  - 10.1.2.30:9092
