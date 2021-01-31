@@ -15,5 +15,5 @@ COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /go/bin/consumer /go/bin/consumer
 COPY consumer.yml /go/bin/consumer.yml
 USER appuser
-EXPOSE 8080
+EXPOSE 2112
 ENTRYPOINT ["/go/bin/consumer"]
