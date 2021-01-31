@@ -18,10 +18,10 @@ type CustomContext struct {
 }
 
 type Config struct {
-	TopicI  string   `yaml:"topicI"`
-	TopicO  string   `yaml:"topicO"`
-	Brokers []string `yaml:"brokers"`
-	PrometheusPort int `yaml:"prometheusPort"`
+	TopicI         string   `yaml:"topicI"`
+	TopicO         string   `yaml:"topicO"`
+	Brokers        []string `yaml:"brokers"`
+	PrometheusPort int      `yaml:"prometheusPort"`
 }
 
 func (c *Config) ParseConfig(path string) error {
