@@ -18,4 +18,4 @@ COPY --from=builder /go/bin/producer /go/bin/producer
 
 USER appuser
 EXPOSE 2112
-ENTRYPOINT ["/go/bin/consumer"]
+ENTRYPOINT ["/go/bin/producer"]
