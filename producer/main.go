@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"github.com/0x0bsod/goLogz"
 	"github.com/0x0bsod/kafka/common"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/segmentio/kafka-go"
 	"math/rand"
+	"net/http"
 	"runtime"
 	"strconv"
 	"sync"
@@ -53,6 +55,12 @@ func main() {
 	ctx.BackgroundCtx = context.Background()
 	ctx.Logger = logs
 	ctx.Config = &config
+
+	// for prometheus
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		panic(http.ListenAndServe(fmt.Sprintf(":%d", ctx.Config.PrometheusPort), nil))
+	}()
 
 	ctx.Logger.Info("Starting producer")
 	produce(ctx)
@@ -100,6 +108,8 @@ func produce(ctx common.CustomContext) {
 				}
 				// log a confirmation once the message is written
 				ctx.Logger.Custom("ACTION", fmt.Sprintf("--> [%d] writes: %d", ID, key))
+				// prometheus `SendCount`
+				SendCount.Inc()
 				time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 			}
 		}(i, &key)
